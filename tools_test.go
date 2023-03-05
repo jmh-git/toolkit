@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
@@ -189,6 +190,69 @@ func TestUploadOneFile(t *testing.T) {
 		// cleanup
 		os.Remove(expFile)
 
+	}
+}
+
+func TestCreateDirIfNotExist_Existing(t *testing.T) {
+	tools := Tools{}
+
+	dir := "./testdata/existingUploadDir"
+	err := tools.CreateDirIfNotExist(dir)
+	if err != nil {
+		t.Error(err)
+	}
+
+	fi, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		t.Errorf("Directory %s has not been created\n", dir)
+	}
+
+	if !fi.IsDir() {
+		t.Errorf("%s is not a directory\n", dir)
+	}
+
+	modeGot := int(fi.Mode().Perm() & fs.ModePerm)
+	modeWant := 0755
+	if modeGot != modeWant {
+		t.Errorf("%s has incorrect filemode - got %o, expected %o\n", dir, modeGot, modeWant)
+	}
+}
+
+func TestCreateDirIfNotExist_NotExisting(t *testing.T) {
+	tools := Tools{}
+
+	dir := "./testdata/notExistingUploadDir"
+	err := tools.CreateDirIfNotExist(dir)
+	if err != nil {
+		t.Error(err)
+	}
+
+	fi, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		t.Fatalf("Directory %s has not been created\n", dir)
+	}
+
+	if !fi.IsDir() {
+		t.Errorf("%s is not a directory\n", dir)
+	}
+
+	modeGot := int(fi.Mode().Perm() & fs.ModePerm)
+	modeWant := 0755
+	if modeGot != modeWant {
+		t.Errorf("%s has incorrect filemode - got %o, expected %o\n", dir, modeGot, modeWant)
+	}
+
+	// cleanup
+	os.Remove(dir)
+}
+
+func TestCreateDirIfNotExist_ExistingNotDir(t *testing.T) {
+	tools := Tools{}
+
+	dir := "./testdata/existingFile"
+	err := tools.CreateDirIfNotExist(dir)
+	if err == nil {
+		t.Error("Expected error but received none")
 	}
 }
 
