@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -186,4 +187,30 @@ func (t *Tools) CreateDirIfNotExist(dir string) error {
 	}
 
 	return nil
+}
+
+// Slugify is a simple function that creates a slug from a string or that returns an error
+// if the slug cannot be created due to an invalid input. Characters not in [a-z] or [0-9]
+// are replaced by a dash. The slug neither begins nor ends with a dash.
+func (t *Tools) Slugify(s string) (string, error) {
+	if s == "" {
+		return "", errors.New("empty string not permitted")
+	}
+	re := regexp.MustCompile(`[^a-z\d]+`)
+	result := re.ReplaceAllString(strings.ToLower(s), "-")
+	result = strings.Trim(result, "-")
+	if len(result) == 0 {
+		return "", errors.New("after trimming, slug is of zero length")
+	}
+	return result, nil
+}
+
+// DownloadStaticFile triggers the Save As Dialog in the browser to download a file to the local
+// disk rather than rendering the file in the browser.
+// See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition for further details
+// about the Content-Disposition header.
+func (t *Tools) DownloadStaticFile(w http.ResponseWriter, r *http.Request, path, file, displayName string) {
+	filePath := filepath.Join(path, file)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", displayName))
+	http.ServeFile(w, r, filePath)
 }

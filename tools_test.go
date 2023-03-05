@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"io"
 	"io/fs"
+	"io/ioutil"
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
@@ -253,6 +254,63 @@ func TestCreateDirIfNotExist_ExistingNotDir(t *testing.T) {
 	err := tools.CreateDirIfNotExist(dir)
 	if err == nil {
 		t.Error("Expected error but received none")
+	}
+}
+
+func TestCreateSlug(t *testing.T) {
+	tools := Tools{}
+
+	tests := []struct {
+		sentence string
+		slug     string
+		expErr   bool
+	}{
+		{sentence: "This is the begin of a story", slug: "this-is-the-begin-of-a-story", expErr: false},
+		{sentence: "Hello World!", slug: "hello-world", expErr: false},
+		{sentence: "", slug: "", expErr: true},
+		{sentence: "!+/()%$-", slug: "", expErr: true},
+		{sentence: "!-a=?&%§\"'", slug: "a", expErr: false},
+	}
+
+	for _, test := range tests {
+		got, err := tools.Slugify(test.sentence)
+		if err != nil && test.expErr == false {
+			t.Errorf("%s - received error %v\n", test.sentence, err)
+		}
+		if err == nil && test.expErr {
+			t.Errorf("%s - expected error but received none", test.sentence)
+		}
+		if err == nil && got != test.slug {
+			t.Errorf("%s - expected %s, got %s\n", test.sentence, test.slug, got)
+		}
+	}
+}
+
+func TestDownloadStaticFile(t *testing.T) {
+	responseRecorder := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+
+	var tools Tools
+	tools.DownloadStaticFile(responseRecorder, r, "./testdata", "mycat.png", "kitten.png")
+
+	res := responseRecorder.Result()
+	defer res.Body.Close()
+
+	got := res.Header["Content-Length"][0]
+	want := "79313"
+	if got != want {
+		t.Errorf("Content length not as expected, got %s\n", got)
+	}
+
+	got = res.Header["Content-Disposition"][0]
+	want = "attachment; filename=\"kitten.png\""
+	if got != want {
+		t.Errorf("Invalid Content-Disposition, got %s\n", got)
+	}
+
+	_, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("Error while reading file\n")
 	}
 }
 
