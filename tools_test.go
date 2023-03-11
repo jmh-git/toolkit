@@ -1,6 +1,9 @@
 package toolkit
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -8,6 +11,7 @@ import (
 	"io/fs"
 	"io/ioutil"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -311,6 +315,177 @@ func TestDownloadStaticFile(t *testing.T) {
 	_, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		t.Errorf("Error while reading file\n")
+	}
+}
+
+var jsonTests = []struct {
+	name          string
+	json          string
+	errorExpected bool
+	maxSize       int
+	allowUnknown  bool
+}{
+	{
+		name:          "good JSON",
+		json:          `{"foo": "bar"}`,
+		errorExpected: false,
+		maxSize:       1024,
+		allowUnknown:  false,
+	},
+	{
+		name:          "badly formatted JSON",
+		json:          `{"foo": }`,
+		errorExpected: true,
+		maxSize:       1024,
+		allowUnknown:  false,
+	},
+	{
+		name:          "incorrect type",
+		json:          `{"foo": 1}`,
+		errorExpected: true,
+		maxSize:       1024,
+		allowUnknown:  false,
+	},
+	{
+		name:          "two JSON files",
+		json:          `{"foo": "1"}{"alpha": "beta"}`,
+		errorExpected: true,
+		maxSize:       1024,
+		allowUnknown:  false,
+	},
+	{
+		name:          "empty body",
+		json:          ``,
+		errorExpected: true,
+		maxSize:       1024,
+		allowUnknown:  false,
+	},
+	{
+		name:          "syntax error in JSON",
+		json:          `{"foo": 1"}`,
+		errorExpected: true,
+		maxSize:       1024,
+		allowUnknown:  false,
+	},
+	{
+		name:          "unkown field",
+		json:          `{"fooo": "1"}`,
+		errorExpected: true,
+		maxSize:       1024,
+		allowUnknown:  false,
+	},
+	{
+		name:          "allow unkown field in JSON",
+		json:          `{"fooo": "1"}`,
+		errorExpected: false,
+		maxSize:       1024,
+		allowUnknown:  true,
+	},
+	{
+		name:          "missing field name",
+		json:          `{jack: "1"}`,
+		errorExpected: true,
+		maxSize:       1024,
+		allowUnknown:  true,
+	},
+	{
+		name:          "file too large",
+		json:          `{"foo": "bar"}`,
+		errorExpected: true,
+		maxSize:       5,
+		allowUnknown:  true,
+	},
+	{
+		name:          "not JSON",
+		json:          `Heelo world`,
+		errorExpected: true,
+		maxSize:       1024,
+		allowUnknown:  true,
+	},
+}
+
+func TestReadJSON(t *testing.T) {
+	tool := Tools{}
+
+	for _, test := range jsonTests {
+		tool.MaxJSONSize = test.maxSize
+		tool.AllowUnknownFields = test.allowUnknown
+		var decodedJSON struct {
+			Foo string `json:"foo"`
+		}
+
+		req, err := http.NewRequest("POST", "/", bytes.NewReader([]byte(test.json)))
+		if err != nil {
+			t.Error("Error:", err)
+		}
+
+		rr := httptest.NewRecorder()
+
+		err = tool.ReadJSON(rr, req, &decodedJSON)
+		if test.errorExpected && err == nil {
+			t.Errorf("%s: error expected, but none received\n", test.name)
+		}
+
+		if !test.errorExpected && err != nil {
+			t.Errorf("%s: expected success, but received error %s\n", test.name, err.Error())
+		}
+
+		req.Body.Close()
+	}
+}
+
+func TestWriteJSON(t *testing.T) {
+	tool := Tools{}
+
+	// This implements the ResponseWriter w, called by a handler
+	rr := httptest.NewRecorder()
+
+	// This is what we like to write
+	payload := JSONResponse{
+		Error:   false,
+		Message: "foo",
+	}
+
+	// A map[string]string of headers
+	headers := make(http.Header)
+	headers.Add("FOO", "BAR")
+
+	err := tool.WriteJSON(rr, http.StatusOK, payload, headers)
+	if err != nil {
+		t.Errorf("Failed to write JSON: %v\n", err)
+	}
+}
+
+func TestErrorJSON(t *testing.T) {
+	tool := Tools{}
+
+	// This implements the ResponseWriter w, called by a handler. Once used in this test,
+	// we expect a body that has the error response in JSON.
+	rr := httptest.NewRecorder()
+	err := tool.ErrorJSON(rr, errors.New("Some error"), http.StatusServiceUnavailable)
+	if err != nil {
+		t.Error(err)
+	}
+
+	payload := JSONResponse{}
+
+	// Create a decoder from the response's body and decode into variable payload.
+	decoder := json.NewDecoder(rr.Body)
+	err = decoder.Decode(&payload)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if payload.Error != true {
+		t.Error("Expected Error attribute being true, got false")
+	}
+
+	if payload.Message != "Some error" {
+		t.Errorf("Expected Message attribute being \"%s\", got \"%s\"\n", "Some error", payload.Message)
+	}
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status code %d, got %d\n", http.StatusServiceUnavailable, rr.Code)
 	}
 }
 
