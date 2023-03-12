@@ -19,6 +19,45 @@ import (
 	"testing"
 )
 
+// The following type and functions are needed to write tests w/o having a remote client
+
+// RoundTripFunc is a function that accepts an http request and returns an http response.
+type RoundTripFunc func(r *http.Request) *http.Response
+
+func (f RoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r), nil
+}
+
+func NewTestClient(fn RoundTripFunc) *http.Client {
+	return &http.Client{
+		Transport: fn,
+	}
+}
+
+func TestPushJSONToRemote(t *testing.T) {
+	client := NewTestClient(func(r *http.Request) *http.Response {
+		// Test request parameters
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       ioutil.NopCloser(bytes.NewBufferString("ok")),
+			Header:     make(http.Header),
+		}
+	})
+
+	tool := Tools{}
+
+	var foo struct {
+		Bar string `json:"bar"`
+	}
+	foo.Bar = "fooBar"
+
+	_, _, err := tool.PushJSONToRemote("http://example.com/some/path", foo, client)
+	if err != nil {
+		t.Error("failed to call remote uri", err)
+	}
+
+}
+
 func TestRandomStringStartsWithAlpha(t *testing.T) {
 	tools := Tools{}
 
